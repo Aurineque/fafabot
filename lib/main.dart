@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:intl/intl.dart';
+import '/constants/prompts.dart'; 
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,7 +18,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Fafabot',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
 
@@ -44,6 +45,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   final List<Message> _messages = [];
 
+  ChatPhase _currentPhase = ChatPhase.explorar;
+
   @override
   void initState() {
     super.initState();
@@ -51,24 +54,56 @@ class _ChatScreenState extends State<ChatScreen> {
     model = GenerativeModel(model: 'gemini-1.5-flash-latest', apiKey: apiKey);
   }
 
-  Future<void> sendMessage() async{
-    final message = _userInput.text;
+Future<void> sendMessage() async {
+  final message = _userInput.text;
+  if (message.isEmpty) return;
 
+  setState(() {
+    _messages.add(Message(isUser: true, message: message, date: DateTime.now()));
+    _userInput.clear();
+  });
+  
+  try {
+    // 1. CONSTRUIR O HISTÓRICO DA CONVERSA
+    // Você precisa formatar o _messages para uma string que a IA entenda
+    String dialogoHistorico = _messages.map((m) => "${m.isUser ? 'User' : 'Chatbot'}: ${m.message}").join('\n');
+
+    // 2. OBTER O PROMPT BASE DA FASE ATUAL
+    String promptBase = AppPrompts.phasePrompts[_currentPhase]!;
+
+    // (OPCIONAL AVANÇADO: CHAMAR O ANALISADOR AQUI)
+    // Map<String, dynamic> analise = await analisarConversa(_currentPhase, dialogoHistorico);
+    // String instrucaoDinamica = gerarInstrucaoDinamica(analise);
+    
+    // 3. MONTAR O PROMPT FINAL
+    if (_currentPhase == ChatPhase.explorar) {
+  // Se a mensagem do usuário parece conter um evento, preparamos para a próxima fase
+  if (message.contains("fui para") || message.contains("ganhei") || message.contains("briguei")) {
+    setState(() { _currentPhase = ChatPhase.rotular; });
+    promptBase = AppPrompts.phasePrompts[ChatPhase.rotular]!; // Já usa o prompt da nova fase
+  }
+}
+String regras = AppPrompts.regrasGerais;
+
+String promptFinal = "$promptBase\n$regras\n\nHistórico:\n$dialogoHistorico\nChatbot:";
+    // 4. CHAMAR A API COM O NOVO PROMPT
+    final content = [Content.text(promptFinal)]; // Adapte conforme a API que você usa
+    final response = await model.generateContent(content);
+    
+    // 5. ATUALIZAR A UI E A FASE
     setState(() {
-      _messages.add(Message(isUser: true, message: message, date: DateTime.now()));
-      _userInput.clear(); // Limpa o campo de texto após enviar
+      _messages.add(Message(
+          isUser: false,
+          message: response.text ?? "Ocorreu um erro.",
+          date: DateTime.now()));
+
+      // 6. LÓGICA DE TRANSIÇÃO DE FASE
+      // (aqui você atualiza o _currentPhase com base na resposta ou análise)
+      // Exemplo simples:
+      if (_currentPhase == ChatPhase.explorar && (response.text?.contains("emoção") ?? false)) {
+          _currentPhase = ChatPhase.rotular;
+      }
     });
-
-    try {
-      final content = [Content.text(message)];
-      final response = await model.generateContent(content);
-
-      setState(() {
-        _messages.add(Message(
-            isUser: false,
-            message: response.text ?? "Não foi possível obter uma resposta.", // Segurança contra nulo
-            date: DateTime.now()));
-      });
     } catch (e) {
       setState(() {
         _messages.add(Message(

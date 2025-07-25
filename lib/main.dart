@@ -3,7 +3,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:intl/intl.dart';
-import '/constants/prompts.dart'; 
+import '/constants/prompts.dart';
+import 'dart:convert';
+
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,7 +39,7 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> {  
   final TextEditingController _userInput = TextEditingController();
 
   late final String apiKey;
@@ -47,13 +49,158 @@ class _ChatScreenState extends State<ChatScreen> {
 
   ChatPhase _currentPhase = ChatPhase.explorar;
 
-  @override
-  void initState() {
-    super.initState();
-    apiKey = dotenv.env['API_KEY']!;
-    model = GenerativeModel(model: 'gemini-1.5-flash-latest', apiKey: apiKey);
+  // Modelo principal para gerar as respostas do chatbot
+final GenerativeModel modeloPrincipal = GenerativeModel(
+  model: 'gemini-1.5-pro-latest', // Ou o modelo que preferir
+  apiKey: dotenv.env['API_KEY_principal']!,
+);
+
+// Modelo secundário, mais rápido, para análise
+final GenerativeModel modeloAnalisador = GenerativeModel(
+  model: 'gemini-1.5-pro-latest', // Modelo mais rápido para análise
+  apiKey: dotenv.env['API_KEY_secundario']!,
+);
+
+Future<Map<String, dynamic>> analisarDialogo(String dialogoHistorico, ChatPhase faseAtual) async {
+  String? promptAnalisador;
+
+  // Usa um switch para selecionar o prompt correto.
+  switch (faseAtual) {
+    case ChatPhase.explorar:
+      promptAnalisador = AppPrompts.analisadorPromptExplorar;
+      break;
+    case ChatPhase.rotular:
+      promptAnalisador = AppPrompts.analisadorPromptRotular;
+      break;
+    case ChatPhase.busca:
+    promptAnalisador = AppPrompts.analisadorPromptBusca;
+    break;
+  case ChatPhase.gravacao:
+    promptAnalisador = AppPrompts.analisadorPromptGravacao;
+    break;
+  case ChatPhase.compartilhar:
+    promptAnalisador = AppPrompts.analisadorPromptCompartilhar;
+    break;
+  }
+  
+  final promptCompleto = promptAnalisador + dialogoHistorico;
+  String? respostaOriginal; // Variável para guardar a resposta original
+
+  try {
+    final response = await modeloPrincipal.generateContent([
+      Content.text(promptCompleto),
+    ]);
+    
+    respostaOriginal = response.text; // Guarda a resposta para depuração
+
+    if (respostaOriginal != null) {
+      // =======================================================
+      // LÓGICA DE EXTRAÇÃO DE JSON
+      // =======================================================
+      
+      // 1. Encontra o primeiro '{' na resposta
+      final int startIndex = respostaOriginal.indexOf('{');
+      
+      // 2. Encontra o último '}' na resposta
+      final int endIndex = respostaOriginal.lastIndexOf('}');
+
+      // 3. Se ambos foram encontrados, extrai a substring entre eles
+      if (startIndex != -1 && endIndex != -1) {
+        final String jsonString = respostaOriginal.substring(startIndex, endIndex + 1);
+        
+        // 4. Decodifica a string JSON extraída
+        return jsonDecode(jsonString) as Map<String, dynamic>;
+      } else {
+        // Se não conseguiu encontrar um JSON válido, lança um erro.
+        throw FormatException("Não foi possível encontrar um objeto JSON válido na resposta da API.");
+      }
+    }
+  } catch (e) {
+    print("Erro ao analisar o diálogo ou decodificar o JSON: $e");
+    // Imprime a resposta original para sabermos o que causou o erro
+    print("Resposta original da API que causou o erro: $respostaOriginal");
   }
 
+  // Retorna um mapa vazio em caso de qualquer erro.
+  return {};
+}
+
+
+void _gerenciarTransicaoDeFase(Map<String, dynamic> analise, String respostaChatbot) {
+  ChatPhase proximaFase = _currentPhase; // Começa com a fase atual
+
+  switch (_currentPhase) {
+    case ChatPhase.explorar:
+      // Se o analisador encontrou um evento chave, muda para a fase de rotular.
+      if (analise['evento_chave_identificado'] == 'SIM') {
+        proximaFase = ChatPhase.rotular;
+        print("MUDANÇA DE FASE: explorar -> rotular");
+      }
+      break;
+
+    case ChatPhase.rotular:
+      // A transição aqui é mais complexa. Acontece quando todas as emoções forem
+      // abordadas. Para simplificar, vamos imaginar uma condição.
+      bool todasEmpatizadas = true;
+      if (analise.containsKey('emocoes_identificadas')) {
+        List<dynamic> emocoes = analise['emocoes_identificadas'];
+        if (emocoes.isEmpty) {
+          todasEmpatizadas = false; // Se não identificou emoção, não pode avançar
+        }
+        for (var emocaoInfo in emocoes) {
+          if (emocaoInfo['chatbot_empatizou'] == 'NÃO') {
+            todasEmpatizadas = false;
+            break;
+          }
+        }
+      } else {
+        todasEmpatizadas = false;
+      }
+      
+      if (todasEmpatizadas) {
+        // DECIDIR ENTRE BUSCA (negativo) E GRAVACAO (positivo)
+        // Esta é uma lógica que você pode refinar. Por exemplo, detectar palavras negativas.
+        // Por enquanto, vamos para a fase de busca como padrão.
+        proximaFase = ChatPhase.busca;
+        print("MUDANÇA DE FASE: rotular -> busca");
+      }
+      break;
+
+    case ChatPhase.busca:
+      // Se o analisador indicar que uma solução foi encontrada.
+      if (analise['solucao_proposta_pelo_usuario'] == 'SIM') {
+        proximaFase = ChatPhase.compartilhar;
+        print("MUDANÇA DE FASE: busca -> compartilhar");
+      }
+      break;
+      
+    case ChatPhase.gravacao:
+      // Se o analisador indicar que o chatbot já deu o exemplo de diário.
+      if (analise['chatbot_ja_deu_exemplo'] == 'SIM') {
+        proximaFase = ChatPhase.compartilhar;
+        print("MUDANÇA DE FASE: gravacao -> compartilhar");
+      }
+      break;
+
+    case ChatPhase.compartilhar:
+      // Se o analisador indicar que o usuário não quer uma nova conversa.
+      if (analise['usuario_deseja_nova_conversa'] == 'NÃO') {
+        // Fim da conversa, não muda de fase, pode até mostrar uma mensagem de "tchau".
+      } else if (analise['usuario_deseja_nova_conversa'] == 'SIM') {
+        // Volta para o início para discutir um novo evento.
+        proximaFase = ChatPhase.explorar;
+        print("REINICIANDO FLUXO: compartilhar -> explorar");
+      }
+      break;
+  }
+
+  // Atualiza o estado da fase, se ela mudou.
+  if (proximaFase != _currentPhase) {
+    setState(() {
+      _currentPhase = proximaFase;
+    });
+  }
+}
 Future<void> sendMessage() async {
   final message = _userInput.text;
   if (message.isEmpty) return;
@@ -62,57 +209,94 @@ Future<void> sendMessage() async {
     _messages.add(Message(isUser: true, message: message, date: DateTime.now()));
     _userInput.clear();
   });
-  
+
   try {
-    // 1. CONSTRUIR O HISTÓRICO DA CONVERSA
-    // Você precisa formatar o _messages para uma string que a IA entenda
+    // =======================================================
+    // PASSO 1: CHAMAR O ANALISADOR
+    // =======================================================
     String dialogoHistorico = _messages.map((m) => "${m.isUser ? 'User' : 'Chatbot'}: ${m.message}").join('\n');
+    
+    // Chamamos o analisador com o histórico e a fase atual para obter o JSON de análise.
+    Map<String, dynamic> analise = await analisarDialogo(dialogoHistorico, _currentPhase);
+    print("FASE ATUAL: $_currentPhase");
+    print("RESULTADO DA ANÁLISE: $analise");
 
-    // 2. OBTER O PROMPT BASE DA FASE ATUAL
+
+    // =======================================================
+    // PASSO 2: GERAR INSTRUÇÕES DINÂMICAS (com base na análise)
+    // =======================================================
+    String instrucaoDinamica = "";
+
+    // Lógica para a fase ROTULAR: verifica se há emoções para empatizar.
+    if (_currentPhase == ChatPhase.rotular && analise.containsKey('emocoes_identificadas')) {
+      List<dynamic> emocoes = analise['emocoes_identificadas'];
+      for (var emocaoInfo in emocoes) {
+        if (emocaoInfo['chatbot_empatizou'] == 'NÃO') {
+          instrucaoDinamica = "Instrução Urgente: Empatize especificamente com a emoção '${emocaoInfo['emocao']}' que o usuário acabou de mencionar.";
+          break; // Para na primeira emoção que precisa de empatia.
+        }
+      }
+    }
+    // Adicione aqui a lógica para outras fases se precisar de instruções dinâmicas.
+
+
+    // =======================================================
+    // PASSO 3: MONTAR O PROMPT FINAL PARA O CHATBOT PRINCIPAL
+    // =======================================================
     String promptBase = AppPrompts.phasePrompts[_currentPhase]!;
-
-    // (OPCIONAL AVANÇADO: CHAMAR O ANALISADOR AQUI)
-    // Map<String, dynamic> analise = await analisarConversa(_currentPhase, dialogoHistorico);
-    // String instrucaoDinamica = gerarInstrucaoDinamica(analise);
+    String regras = AppPrompts.regrasGerais;
     
-    // 3. MONTAR O PROMPT FINAL
-    if (_currentPhase == ChatPhase.explorar) {
-  // Se a mensagem do usuário parece conter um evento, preparamos para a próxima fase
-  if (message.contains("fui para") || message.contains("ganhei") || message.contains("briguei")) {
-    setState(() { _currentPhase = ChatPhase.rotular; });
-    promptBase = AppPrompts.phasePrompts[ChatPhase.rotular]!; // Já usa o prompt da nova fase
-  }
-}
-String regras = AppPrompts.regrasGerais;
+    String promptFinal = """
+      $promptBase
+      $regras
+      
+      $instrucaoDinamica
 
-String promptFinal = "$promptBase\n$regras\n\nHistórico:\n$dialogoHistorico\nChatbot:";
-    // 4. CHAMAR A API COM O NOVO PROMPT
-    final content = [Content.text(promptFinal)]; // Adapte conforme a API que você usa
-    final response = await model.generateContent(content);
+      Histórico da Conversa:
+      $dialogoHistorico
+      
+      Chatbot:
+    """;
+//Print para Debug da conversa
+//void printLongText(String text, {int chunkSize = 1000}) {
+//   for (int i = 0; i < text.length; i += chunkSize) {
+//     print(text.substring(i, i + chunkSize > text.length ? text.length : i + chunkSize));
+//   }
+// }
+// printLongText(dialogoHistorico);
+    // =======================================================
+    // PASSO 4: CHAMAR O CHATBOT PRINCIPAL COM O PROMPT INTELIGENTE
+    // =======================================================
+    final response = await modeloPrincipal.generateContent([
+      Content.text(promptFinal),
+    ]);
     
-    // 5. ATUALIZAR A UI E A FASE
+
+    final respostaChatbot = response.text ?? "Desculpe, não consegui processar a resposta.";
+
     setState(() {
       _messages.add(Message(
           isUser: false,
-          message: response.text ?? "Ocorreu um erro.",
+          message: respostaChatbot,
           date: DateTime.now()));
-
-      // 6. LÓGICA DE TRANSIÇÃO DE FASE
-      // (aqui você atualiza o _currentPhase com base na resposta ou análise)
-      // Exemplo simples:
-      if (_currentPhase == ChatPhase.explorar && (response.text?.contains("emoção") ?? false)) {
-          _currentPhase = ChatPhase.rotular;
-      }
     });
-    } catch (e) {
-      setState(() {
-        _messages.add(Message(
-            isUser: false,
-            message: "Desculpe, ocorreu um erro. Tente novamente. código: $e",
-            date: DateTime.now()));
-      });
-    }
+    
+
+    // =======================================================
+    // PASSO 5: GERENCIAR A TRANSIÇÃO PARA A PRÓXIMA FASE
+    // =======================================================
+    // Esta função usa o resultado da análise para decidir se deve mudar de fase.
+    _gerenciarTransicaoDeFase(analise, respostaChatbot);
+
+  } catch (e) {
+    setState(() {
+      _messages.add(Message(
+          isUser: false,
+          message: "Desculpe, ocorreu um erro. código: $e",
+          date: DateTime.now()));
+    });
   }
+}
   
   @override
   Widget build(BuildContext context) {

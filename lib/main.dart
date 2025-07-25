@@ -42,24 +42,27 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {  
   final TextEditingController _userInput = TextEditingController();
 
-  late final String apiKey;
-  late final GenerativeModel model;
+  //late final String apiKey;
 
   final List<Message> _messages = [];
 
   ChatPhase _currentPhase = ChatPhase.explorar;
 
-  // Modelo principal para gerar as respostas do chatbot
-final GenerativeModel modeloPrincipal = GenerativeModel(
-  model: 'gemini-1.5-pro-latest', // Ou o modelo que preferir
-  apiKey: dotenv.env['API_KEY_principal']!,
-);
+  late GenerativeModel modeloPrincipal;
+  late GenerativeModel modeloAnalisador;
 
-// Modelo secundário, mais rápido, para análise
-final GenerativeModel modeloAnalisador = GenerativeModel(
-  model: 'gemini-1.5-pro-latest', // Modelo mais rápido para análise
-  apiKey: dotenv.env['API_KEY_secundario']!,
-);
+  @override
+  void initState() {
+    super.initState();
+    modeloPrincipal = GenerativeModel(
+      model: 'gemini-1.5-pro-latest', // para conversa
+      apiKey: dotenv.env['API_KEY_principal']!,
+    );
+    modeloAnalisador = GenerativeModel(
+      model: 'gemini-1.5-flash-latest', // para análise/JSON
+      apiKey: dotenv.env['API_KEY_secundario']!,
+    );
+  }
 
 Future<Map<String, dynamic>> analisarDialogo(String dialogoHistorico, ChatPhase faseAtual) async {
   String? promptAnalisador;
@@ -87,7 +90,7 @@ Future<Map<String, dynamic>> analisarDialogo(String dialogoHistorico, ChatPhase 
   String? respostaOriginal; // Variável para guardar a resposta original
 
   try {
-    final response = await modeloPrincipal.generateContent([
+    final response = await modeloAnalisador.generateContent([
       Content.text(promptCompleto),
     ]);
     

@@ -1,4 +1,4 @@
-enum ChatPhase { explorar, rotular, gravacao, busca, compartilhar}
+enum ChatPhase { explorar, rotular, gravacao, busca, validacao, questionario, preferencias, recomendacao, compartilhar}
 //validacao, questionario, preferencias, recomendacao,
 
 class AppPrompts {
@@ -98,21 +98,24 @@ class AppPrompts {
     DIÁLOGO REAL:
   """;
   static const String analisadorPromptRotular = """
-    Você é um assistente de análise de diálogo. Sua única tarefa é ler o histórico da conversa e extrair informações em um formato JSON. Não gere respostas de chat.
+    Você é um assistente de análise de diálogo, focado em extrair dados estruturados. Sua única e exclusiva tarefa é ler o histórico da conversa e retornar um único bloco de código JSON. Não gere respostas de chat, explicações ou qualquer texto fora do JSON.
 
-    Analise o diálogo a seguir, que está na fase "ROTULAR", e preencha o seguinte objeto JSON:
+    Analise o diálogo a seguir, que está na fase "ROTULAR", e preencha rigorosamente o seguinte objeto JSON:
     {
-      "evento_chave": "O evento principal que o usuário descreveu.",
+      "evento_chave": "Um resumo conciso do evento principal que o usuário descreveu.",
       "emocoes_identificadas": [
         {
-          "emocao": "O nome da emoção que o usuário mencionou.",
-          "razao": "A razão pela qual o usuário sentiu essa emoção, se mencionada.",
-          "chatbot_empatizou": "SIM ou NÃO, baseado se o chatbot já demonstrou empatia por esta emoção específica."
+          "emocao_usuario": "Exatamente a palavra ou frase que o usuário usou para descrever o sentimento.",
+          "emocao_normalizada": "A palavra-base para a emoção (ex: 'contente' para 'alegria', 'apavorado' para 'medo'). Use uma palavra da lista fornecida que mais se encaixe com a descrição do usuário.
+          "polaridade": "positiva ou negativa, dependendo do sentimento do usuário.",
+          "razao": "A razão pela qual o usuário sentiu essa emoção, se mencionada. Se não, use null.",
+          "chatbot_empatizou": "SIM ou NÃO, baseado se o chatbot já demonstrou empatia por esta emoção específica no diálogo."
         }
       ],
-      "precisa_mostrar_lista_emocoes": "SIM se o usuário disse 'não sei' ou parece confuso, NÃO caso contrário."
+      "precisa_mostrar_lista_emocoes": "SIM se o usuário expressou dificuldade em nomear a emoção (ex: 'não sei', 'é estranho'), NÃO caso contrário."
     }
-
+    No campo de emocao_normalizada, normalize as emoções do usuário para uma das emoções da lista a seguir:
+    (Alegria,  Apreciação, Arrependimento, Angústia, Comoção, Confiança, Conforto, Decepção, Desconforto, Emoção, Felicidade, Irritação, Medo, Paixão, Pesar, Realização, Ressentimento, Satisfação, Surpresa, Vergonha.)
     ---
     EXEMPLO 1:
     Diálogo de Entrada:
@@ -125,12 +128,16 @@ class AppPrompts {
       "evento_chave": "Foi ao parque e andou na montanha-russa",
       "emocoes_identificadas": [
         {
-          "emocao": "feliz",
+          "emocao_usuario": "feliz",
+          "emocao_normalizada": "alegria",
+          "polaridade": "positiva",
           "razao": "Foi ao parque",
           "chatbot_empatizou": "SIM"
         },
         {
-          "emocao": "ansioso",
+          "emocao_usuario": "ansioso",
+          "emocao_normalizada": "medo",
+          "polaridade": "negativa",
           "razao": "Andou na montanha-russa",
           "chatbot_empatizou": "NÃO"
         }
@@ -152,10 +159,31 @@ class AppPrompts {
       "precisa_mostrar_lista_emocoes": "SIM"
     }
     ---
+    EXEMPLO 3:
+    Diálogo de Entrada:
+    User: Hoje eu fiquei bem triste.
+    Chatbot: Puxa, sinto muito que tenha ficado triste. Quer me contar o porquê?
+    User: É que eu perdi meu brinquedo favorito.
+
+    JSON de Saída:
+    {
+      "evento_chave": "Perdeu o brinquedo favorito",
+      "emocoes_identificadas": [
+        {
+          "emocao_usuario": "triste",
+          "emocao_normalizada": "angústia",
+          "polaridade": "negativa",
+          "razao": "Perdeu o brinquedo favorito",
+          "chatbot_empatizou": "SIM"
+        }
+      ],
+      "precisa_mostrar_lista_emocoes": "NÃO"
+    }
+    ---
     Agora, analise o diálogo real abaixo e forneça apenas o JSON como saída.
 
     DIÁLOGO REAL:
-  """;
+    """;
   static const String analisadorPromptBusca = """
     Você é um assistente de análise de diálogo na fase 'BUSCA'. A meta é ajudar o usuário a encontrar uma solução para um problema. Responda apenas com JSON.
 
@@ -208,6 +236,7 @@ class AppPrompts {
 
     DIÁLOGO REAL:
   """;
+
   static const String analisadorPromptCompartilhar = """
     Você é um assistente de análise de diálogo na fase 'COMPARTILHAR'. O objetivo é incentivar o usuário a conversar com os pais e verificar se ele quer iniciar um novo tópico. Responda apenas com JSON.
 

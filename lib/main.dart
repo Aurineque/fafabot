@@ -42,14 +42,17 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {  
   final TextEditingController _userInput = TextEditingController();
 
-  //late final String apiKey;
-
   final List<Message> _messages = [];
 
   ChatPhase _currentPhase = ChatPhase.explorar;
 
   late GenerativeModel modeloPrincipal;
   late GenerativeModel modeloAnalisador;
+
+  // Emoções que ativam o Caminho 3 (Protocolo Motus Up)
+  static const List<String> _emocoesDeValidacao = [
+    'medo', 'angústia', 'decepção'
+  ];
 
   @override
   void initState() {
@@ -83,6 +86,18 @@ Future<Map<String, dynamic>> analisarDialogo(String dialogoHistorico, ChatPhase 
     break;
   case ChatPhase.compartilhar:
     promptAnalisador = AppPrompts.analisadorPromptCompartilhar;
+    break;
+  case ChatPhase.validacao:
+    promptAnalisador = ""; // ou algum valor padrão
+    break;
+  case ChatPhase.questionario:
+    promptAnalisador = ""; // ou defina um prompt específico se necessário
+    break;
+  case ChatPhase.preferencias:
+    promptAnalisador = ""; // ou defina um prompt específico se necessário
+    break;
+  case ChatPhase.recomendacao:
+    promptAnalisador = ""; // ou defina um prompt específico se necessário
     break;
   }
   
@@ -142,31 +157,88 @@ void _gerenciarTransicaoDeFase(Map<String, dynamic> analise, String respostaChat
       break;
 
     case ChatPhase.rotular:
-      // A transição aqui é mais complexa. Acontece quando todas as emoções forem
-      // abordadas. Para simplificar, vamos imaginar uma condição.
-      bool todasEmpatizadas = true;
-      if (analise.containsKey('emocoes_identificadas')) {
-        List<dynamic> emocoes = analise['emocoes_identificadas'];
-        if (emocoes.isEmpty) {
-          todasEmpatizadas = false; // Se não identificou emoção, não pode avançar
-        }
-        for (var emocaoInfo in emocoes) {
-          if (emocaoInfo['chatbot_empatizou'] == 'NÃO') {
-            todasEmpatizadas = false;
-            break;
-          }
-        }
+  // O "porteiro": esta lógica continua a mesma e é essencial.
+  // Só avançamos de fase se o chatbot já empatizou com todas as emoções identificadas.
+  bool podeAvancar = false;
+  if (analise.containsKey('emocoes_identificadas')) {
+    List<dynamic> emocoes = analise['emocoes_identificadas'];
+    if (emocoes.isNotEmpty) {
+      podeAvancar = emocoes.every((emocao) => emocao['chatbot_empatizou'] == 'SIM');
+    }
+  }
+
+  // Se a condição para avançar foi atendida, aplicamos a nova lógica de ramificação.
+  if (podeAvancar) {
+    final List<dynamic> emocoes = analise['emocoes_identificadas'];
+
+    // 1. PRIMEIRO, VERIFICAMOS SE EXISTE QUALQUER EMOÇÃO COM POLARIDADE NEGATIVA.
+    final bool contemEmocaoNegativa = emocoes.any((e) => e['polaridade'] == 'negativa');
+
+    if (contemEmocaoNegativa) {
+      // Se existe pelo menos uma emoção negativa, vamos analisá-la.
+
+      // 2. AGORA, VERIFICAMOS SE ALGUMA DAS EMOÇÕES NEGATIVAS É UMA DAS ESPECIAIS ('medo', 'angústia', 'decepção').
+      //    Usamos .where() para filtrar apenas as emoções negativas
+      //    e .any() para checar se alguma delas está na nossa lista de validação.
+      final bool deveIrParaValidacao = emocoes
+          .where((e) => e['polaridade'] == 'negativa')
+          .any((e) => _emocoesDeValidacao.contains(e['emocao_normalizada']));
+
+      if (deveIrParaValidacao) {
+        // CAMINHO 3: Emoções de Alerta Específicas
+        proximaFase = ChatPhase.validacao;
+        print("RAMIFICAÇÃO: Emoção de validação ('medo', 'angústia', 'decepção') detectada. Indo para o Caminho 3 -> validacao");
       } else {
-        todasEmpatizadas = false;
-      }
-      
-      if (todasEmpatizadas) {
-        // DECIDIR ENTRE BUSCA (negativo) E GRAVACAO (positivo)
-        // Esta é uma lógica que você pode refinar. Por exemplo, detectar palavras negativas.
-        // Por enquanto, vamos para a fase de busca como padrão.
+        // CAMINHO 2: Emoções Negativas Gerais
+        // Se há emoções negativas, mas nenhuma delas está na lista de validação especial.
         proximaFase = ChatPhase.busca;
-        print("MUDANÇA DE FASE: rotular -> busca");
+        print("RAMIFICAÇÃO: Emoções negativas gerais detectadas. Indo para o Caminho 2 -> busca");
       }
+
+    } else {
+      // CAMINHO 1: Apenas Emoções Positivas
+      // Se o .any() não encontrou nenhuma emoção com polaridade negativa,
+      // significa que todas são positivas.
+      proximaFase = ChatPhase.gravacao;
+      print("RAMIFICAÇÃO: Apenas emoções positivas detectadas. Indo para o Caminho 1 -> gravacao");
+    }
+  }
+  break;
+
+    // =======================================================
+    // ESQUELETO PARA AS NOVAS FASES DO CAMINHO 3
+    // =======================================================
+
+    case ChatPhase.validacao:
+      print("EXECUTANDO LÓGICA DE TRANSIÇÃO PARA: validacao");
+      // Futuramente, a lógica aqui verificará se a validação foi concluída.
+      // Ex: if (analise['validacao_concluida'] == 'SIM') {
+      //   proximaFase = ChatPhase.questionario;
+      // }
+      break;
+
+    case ChatPhase.questionario:
+      print("EXECUTANDO LÓGICA DE TRANSIÇÃO PARA: questionario");
+      // A lógica aqui verificará se o questionário terminou.
+      // Ex: if (analise['questionario_concluido'] == 'SIM') {
+      //   proximaFase = ChatPhase.preferencias;
+      // }
+      break;
+
+    case ChatPhase.preferencias:
+      print("EXECUTANDO LÓGICA DE TRANSIÇÃO PARA: preferencias");
+      // A lógica aqui verificará se as preferências foram coletadas.
+      // Ex: if (analise['preferencias_coletadas'] == 'SIM') {
+      //   proximaFase = ChatPhase.recomendacao;
+      // }
+      break;
+
+    case ChatPhase.recomendacao:
+      print("EXECUTANDO LÓGICA DE TRANSIÇÃO PARA: recomendacao");
+      // A lógica aqui verificará se a recomendação foi feita para então ir para 'compartilhar'.
+      // Ex: if (analise['recomendacao_feita'] == 'SIM') {
+      //   proximaFase = ChatPhase.compartilhar;
+      // }
       break;
 
     case ChatPhase.busca:
@@ -252,21 +324,18 @@ Future<void> sendMessage() async {
     String promptFinal = """
       $promptBase
       $regras
-      
       $instrucaoDinamica
-
       Histórico da Conversa:
       $dialogoHistorico
-      
       Chatbot:
     """;
-//Print para Debug da conversa
-//void printLongText(String text, {int chunkSize = 1000}) {
-//   for (int i = 0; i < text.length; i += chunkSize) {
-//     print(text.substring(i, i + chunkSize > text.length ? text.length : i + chunkSize));
-//   }
-// }
-// printLongText(dialogoHistorico);
+  //Print para Debug da conversa
+  //void printLongText(String text, {int chunkSize = 1000}) {
+  //   for (int i = 0; i < text.length; i += chunkSize) {
+  //     print(text.substring(i, i + chunkSize > text.length ? text.length : i + chunkSize));
+  //   }
+  // }
+  // printLongText(dialogoHistorico);
     // =======================================================
     // PASSO 4: CHAMAR O CHATBOT PRINCIPAL COM O PROMPT INTELIGENTE
     // =======================================================

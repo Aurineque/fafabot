@@ -51,22 +51,12 @@ class _ChatScreenState extends State<ChatScreen> {
   late GenerativeModel modeloPrincipal;
   late GenerativeModel modeloAnalisador;
 
-  // Emoções que ativam o Caminho 3 (Protocolo Motus Up)
+  int _pontuacaoQuestionario = 0;
+  bool _isLoading = true;
+  Map<String, dynamic> _baseDeConhecimento = {};
   static const List<String> _emocoesDeValidacao = [
     'medo', 'angústia', 'decepção'
   ];
-
-  TipoQuestionario _proximoQuestionario = TipoQuestionario.nenhum;
-
-  Map<String, dynamic> _baseDeConhecimento = {};
-  int _indicePerguntaAtual = 0;
-  int _pontuacaoQuestionario = 0;
-  bool _questionarioAtivo = false;
-
-  bool _isLoading = true;
-
-  bool _consentimentoQuestionarioObtido = false;
-
 Future<void> _carregarBaseDeConhecimento() async {
   try {
     print("Iniciando o carregamento do assets/knowledge_base.json...");
@@ -113,192 +103,45 @@ Future<void> _carregarBaseDeConhecimento() async {
   }
 
 Future<Map<String, dynamic>> analisarDialogo(String dialogoHistorico, ChatPhase faseAtual) async {
-  String? promptAnalisador;
-
-  // Usa um switch para selecionar o prompt correto.
-  switch (faseAtual) {
-    case ChatPhase.explorar:
-      promptAnalisador = AppPrompts.analisadorPromptExplorar;
-      break;
-    case ChatPhase.rotular:
-      promptAnalisador = AppPrompts.analisadorPromptRotular;
-      break;
-    case ChatPhase.busca:
-    promptAnalisador = AppPrompts.analisadorPromptBusca;
-    break;
-  case ChatPhase.gravacao:
-    promptAnalisador = AppPrompts.analisadorPromptGravacao;
-    break;
-  case ChatPhase.compartilhar:
-    promptAnalisador = AppPrompts.analisadorPromptCompartilhar;
-    break;
-  case ChatPhase.validacao:
-    promptAnalisador = AppPrompts.analisadorPromptValidacao;
-    break;
-  case ChatPhase.questionario:
-    promptAnalisador = ""; // ou defina um prompt específico se necessário
-    break;
-  case ChatPhase.preferencias:
-    promptAnalisador = ""; // ou defina um prompt específico se necessário
-    break;
-  case ChatPhase.recomendacao:
-    promptAnalisador = ""; // ou defina um prompt específico se necessário
-    break;
-  }
-  
-  final promptCompleto = promptAnalisador + dialogoHistorico;
-  String? respostaOriginal; // Variável para guardar a resposta original
-
-  try {
-    final response = await modeloAnalisador.generateContent([
-      Content.text(promptCompleto),
-    ]);
-    
-    respostaOriginal = response.text; // Guarda a resposta para depuração
-
-    if (respostaOriginal != null) {
-      // =======================================================
-      // LÓGICA DE EXTRAÇÃO DE JSON
-      // =======================================================
-      
-      // 1. Encontra o primeiro '{' na resposta
-      final int startIndex = respostaOriginal.indexOf('{');
-      
-      // 2. Encontra o último '}' na resposta
-      final int endIndex = respostaOriginal.lastIndexOf('}');
-
-      // 3. Se ambos foram encontrados, extrai a substring entre eles
-      if (startIndex != -1 && endIndex != -1) {
-        final String jsonString = respostaOriginal.substring(startIndex, endIndex + 1);
-        
-        // 4. Decodifica a string JSON extraída
-        return jsonDecode(jsonString) as Map<String, dynamic>;
-      } else {
-        // Se não conseguiu encontrar um JSON válido, lança um erro.
-        throw FormatException("Não foi possível encontrar um objeto JSON válido na resposta da API.");
-      }
+    String? promptAnalisador;
+    switch (faseAtual) {
+      case ChatPhase.explorar:
+        promptAnalisador = AppPrompts.analisadorPromptExplorar;
+        break;
+      case ChatPhase.rotular:
+        promptAnalisador = AppPrompts.analisadorPromptRotular;
+        break;
+      case ChatPhase.busca:
+        promptAnalisador = AppPrompts.analisadorPromptBusca;
+        break;
+      case ChatPhase.gravacao:
+        promptAnalisador = AppPrompts.analisadorPromptGravacao;
+        break;
+      case ChatPhase.protocoloIntervencao: // <-- Novo caso
+        promptAnalisador = AppPrompts.analisadorPromptProtocolo;
+        break;
+      case ChatPhase.compartilhar:
+        promptAnalisador = AppPrompts.analisadorPromptCompartilhar;
+        break;
     }
-  } catch (e) {
-    print("Erro ao analisar o diálogo ou decodificar o JSON: $e");
-    // Imprime a resposta original para sabermos o que causou o erro
-    print("Resposta original da API que causou o erro: $respostaOriginal");
-  }
 
-  // Retorna um mapa vazio em caso de qualquer erro.
-  return {};
-}
-
- void _processarRespostaQuestionario(String respostaUsuario) {
-  // Acessa a lista de opções de resposta do nosso JSON
-  final List<dynamic>? opcoes = _baseDeConhecimento['questionarios']?['opcoes_resposta'];
-  if (opcoes == null) return;
-
-  // Formata a resposta do usuário para uma comparação mais robusta
-  final respostaFormatada = respostaUsuario.toLowerCase().trim();
-  int pontosGanhos = 0;
-
-  // Procura pela resposta do usuário nas opções disponíveis
-  for (var opcao in opcoes) {
-    String textoOpcao = (opcao['texto'] as String).toLowerCase();
-    // Usamos .contains() para ser mais flexível com a digitação do usuário
-    if (respostaFormatada.contains(textoOpcao)) {
-      pontosGanhos = opcao['pontos'];
-      break; // Encontrou a correspondência, pode parar o loop
+    final promptCompleto = promptAnalisador + dialogoHistorico;
+    // (Sua lógica de chamada do analisador e extração de JSON continua aqui)
+    try {
+        final response = await modeloAnalisador.generateContent([Content.text(promptCompleto)]);
+        if (response.text != null) {
+            final int startIndex = response.text!.indexOf('{');
+            final int endIndex = response.text!.lastIndexOf('}');
+            if (startIndex != -1 && endIndex != -1) {
+                final String jsonString = response.text!.substring(startIndex, endIndex + 1);
+                return jsonDecode(jsonString) as Map<String, dynamic>;
+            }
+        }
+    } catch (e) {
+        print("Erro ao analisar diálogo: $e");
     }
+    return {};
   }
-
-  // Adiciona os pontos encontrados à pontuação total
-  setState(() {
-    _pontuacaoQuestionario += pontosGanhos;
-  });
-
-  // Imprime no console para depuração
-  print("Resposta do usuário: '$respostaUsuario' | Pontos adicionados: $pontosGanhos | Pontuação Total: $_pontuacaoQuestionario");
-}
- 
- void _pedirConsentimentoParaQuestionario() {
-  setState(() {
-    _messages.add(Message(
-      isUser: false,
-      message: "Obrigado por me contar como se sente. Para eu entender um pouco melhor, eu gostaria de fazer algumas perguntas rápidas. Tudo bem por você?",
-      date: DateTime.now(),
-    ));
-  });
-}
-
-void _fazerProximaPergunta() {
-  // 1. Verifica se a base de conhecimento já foi carregada
-  if (_baseDeConhecimento.isEmpty) {
-    print("ERRO: Base de conhecimento está vazia. Não é possível fazer a pergunta.");
-    return;
-  }
-
-  // 2. CORREÇÃO: Mapeia o enum para a string correta do JSON
-  String chaveQuestionario;
-  switch (_proximoQuestionario) {
-    case TipoQuestionario.gad7_medo:
-      chaveQuestionario = 'gad7_medo';
-      break;
-    case TipoQuestionario.phq9_tristeza:
-      chaveQuestionario = 'phq9_tristeza';
-      break;
-    default:
-      print("ERRO: Nenhum questionário selecionado.");
-      return;
-  }
-  
-  print("Procurando perguntas para o questionário: '$chaveQuestionario'");
-
-  // 3. Acessa a lista de perguntas de forma segura
-  List<dynamic>? perguntas = _baseDeConhecimento['questionarios']?[chaveQuestionario]?['perguntas'];
-
-  if (perguntas == null || perguntas.isEmpty) {
-    print("ERRO: Não foram encontradas perguntas para a chave '$chaveQuestionario'. Verifique seu JSON.");
-    return;
-  }
-
-  // 4. Lógica para fazer a pergunta ou finalizar
-  if (_indicePerguntaAtual < perguntas.length) {
-    String textoPergunta = perguntas[_indicePerguntaAtual]['texto'];
-    
-    print("Fazendo a pergunta de índice $_indicePerguntaAtual: $textoPergunta");
-
-    setState(() {
-      _messages.add(Message(
-        isUser: false,
-        message: "Pergunta ${_indicePerguntaAtual + 1} de ${perguntas.length}: $textoPergunta (Responda com umas das seguintes opções: De forma alguma, Vários dias, Mais da metade dos dias, Quase todos os dias)",
-        date: DateTime.now()
-      ));
-      // AQUI VOCÊ DEVE EXIBIR OS BOTÕES DE RESPOSTA NA TELA
-      // Ex: List<dynamic> opcoes = _baseDeConhecimento['questionarios']['opcoes_resposta'];
-    });
-  } else {
-    // Se todas as perguntas foram feitas
-    print("Questionário finalizado com pontuação: $_pontuacaoQuestionario");
-    setState(() {
-      _questionarioAtivo = false;
-    });
-    _finalizarQuestionarioEAnalisar(); 
-  }
-}
-
-// Função para quando o questionário acaba
-void _finalizarQuestionarioEAnalisar() async {
-  // Adiciona uma mensagem de finalização
-  setState(() {
-     _messages.add(Message(
-        isUser: false,
-        message: "Obrigada por responder! Sua pontuação foi: $_pontuacaoQuestionario.",
-        date: DateTime.now()
-      ));
-  });
-
-  // Simula uma chamada de sendMessage para acionar a análise e transição de fase
-  // (Esta parte pode ser refinada, mas força a próxima etapa)
-  String dialogoHistorico = _messages.map((m) => "${m.isUser ? 'User' : 'Chatbot'}: ${m.message}").join('\n');
-  Map<String, dynamic> analise = { "questionario_concluido": "SIM" }; // Simula resultado da análise
-  _gerenciarTransicaoDeFase(analise, "");
-}
 
 void _gerenciarTransicaoDeFase(Map<String, dynamic> analise, String respostaChatbot) {
   ChatPhase proximaFase = _currentPhase; // Começa com a fase atual
@@ -342,7 +185,7 @@ void _gerenciarTransicaoDeFase(Map<String, dynamic> analise, String respostaChat
 
       if (deveIrParaValidacao) {
         // CAMINHO 3: Emoções de Alerta Específicas
-        proximaFase = ChatPhase.validacao;
+        proximaFase = ChatPhase.protocoloIntervencao;
         print("RAMIFICAÇÃO: Emoção de validação ('medo', 'angústia', 'decepção') detectada. Indo para o Caminho 3 -> validacao");
       } else {
         // CAMINHO 2: Emoções Negativas Gerais
@@ -360,72 +203,15 @@ void _gerenciarTransicaoDeFase(Map<String, dynamic> analise, String respostaChat
     }
   }
   break;
-
-// DENTRO DE _gerenciarTransicaoDeFase
-
-  case ChatPhase.validacao:
-    print("EXECUTANDO LÓGICA DE TRANSIÇÃO PARA: validacao");
-    
-    if (analise['validacao_concluida'] == 'SIM') {
-      final int? prazer = analise['resposta_prazer'];
-      final int? energia = analise['resposta_energia'];
-      TipoQuestionario questionarioEscolhido = TipoQuestionario.nenhum;
-
-      if (prazer != null && prazer <= 0) {
-        if (energia != null && energia >= 0) {
-          questionarioEscolhido = TipoQuestionario.gad7_medo;
-        } else {
-          questionarioEscolhido = TipoQuestionario.phq9_tristeza;
+  
+  case ChatPhase.protocoloIntervencao:
+        if (analise['sub_etapa_atual'] == 'concluido') {
+          proximaFase = ChatPhase.compartilhar;
+          setState(() {
+            _pontuacaoQuestionario = analise['dados_coletados']?['pontuacao_total'] ?? 0;
+          });
         }
-      }
-
-      if (questionarioEscolhido != TipoQuestionario.nenhum) {
-        // Atualiza o estado para preparar o questionário
-        if (questionarioEscolhido != TipoQuestionario.nenhum) {
-    setState(() {
-      _proximoQuestionario = questionarioEscolhido;
-      _questionarioAtivo = true;
-      _indicePerguntaAtual = 0;
-      _pontuacaoQuestionario = 0;
-      _consentimentoQuestionarioObtido = false; // <-- GARANTE QUE O CONSENTIMENTO SEJA RESETADO
-    });
-    proximaFase = ChatPhase.questionario;
-    print("MUDANÇA DE FASE: validacao -> questionario");
-        }
-        proximaFase = ChatPhase.questionario;
-        print("MUDANÇA DE FASE: validacao -> questionario");
-      } else {
-        proximaFase = ChatPhase.busca;
-        print("FALLBACK: Respostas de validação não indicam teste. Indo para -> busca");
-      }
-    }
-  break;
-    // Case para sair do questionário
-    case ChatPhase.questionario:
-      print("EXECUTANDO LÓGICA DE TRANSIÇÃO PARA: questionario");
-      // A transição será acionada pela função _finalizarQuestionarioEAnalisar
-      // quando todas as perguntas forem respondidas.
-      if (analise['questionario_concluido'] == 'SIM') {
-        proximaFase = ChatPhase.preferencias;
-        print("MUDANÇA DE FASE: questionario -> preferencias");
-      }
-      break;
-
-    case ChatPhase.preferencias:
-      print("EXECUTANDO LÓGICA DE TRANSIÇÃO PARA: preferencias");
-      // A lógica aqui verificará se as preferências foram coletadas.
-      // Ex: if (analise['preferencias_coletadas'] == 'SIM') {
-      //   proximaFase = ChatPhase.recomendacao;
-      // }
-      break;
-
-    case ChatPhase.recomendacao:
-      print("EXECUTANDO LÓGICA DE TRANSIÇÃO PARA: recomendacao");
-      // A lógica aqui verificará se a recomendação foi feita para então ir para 'compartilhar'.
-      // Ex: if (analise['recomendacao_feita'] == 'SIM') {
-      //   proximaFase = ChatPhase.compartilhar;
-      // }
-      break;
+        break;
 
     case ChatPhase.busca:
       // Se o analisador indicar que uma solução foi encontrada.
@@ -459,11 +245,6 @@ void _gerenciarTransicaoDeFase(Map<String, dynamic> analise, String respostaChat
   setState(() {
     _currentPhase = proximaFase;
   });
-
-  // VERIFICA SE A NOVA FASE É O QUESTIONÁRIO E CHAMA A FUNÇÃO RENOMEADA
-  if (proximaFase == ChatPhase.questionario) {
-    _pedirConsentimentoParaQuestionario();
-  }
 }
 }
 // Dentro de _ChatScreenState
@@ -477,39 +258,6 @@ Future<void> sendMessage() async {
     _messages.add(Message(isUser: true, message: message, date: DateTime.now()));
     _userInput.clear();
   });
-
-  if (_questionarioAtivo) {
-  // PRIMEIRO, VERIFICA SE JÁ TEMOS O CONSENTIMENTO
-  if (!_consentimentoQuestionarioObtido) {
-    final resposta = message.toLowerCase().trim();
-    // Verifica se a resposta foi positiva
-    if (resposta.contains('sim') || resposta.contains('ok') || resposta.contains('tudo bem') || resposta.contains('pode')) {
-      setState(() {
-        _consentimentoQuestionarioObtido = true;
-      });
-      // Consentimento obtido, faz a primeira pergunta do questionário
-      _fazerProximaPergunta();
-    } else {
-      // Se a resposta foi negativa, pula todo o questionário
-      setState(() {
-        _questionarioAtivo = false;
-        _currentPhase = ChatPhase.compartilhar; // Pula para a fase final
-      });
-      // Inicia a fase de compartilhar com uma mensagem amigável
-      _currentPhase = ChatPhase.compartilhar; 
-    }
-  } else {
-    // SE O CONSENTIMENTO JÁ FOI DADO, CONTINUA O QUESTIONÁRIO NORMALMENTE
-    print("Modo questionário ativo. Processando resposta para pergunta de índice $_indicePerguntaAtual.");
-    _processarRespostaQuestionario(message);
-    setState(() {
-      _indicePerguntaAtual++;
-    });
-    _fazerProximaPergunta();
-  }
-  return; // Para a execução para não chamar a IA
-}
-  
   // =======================================================
   // O FLUXO PRINCIPAL (CONVERSA COM IA) CONTINUA ABAIXO
   // A mensagem do usuário já foi adicionada à tela.
@@ -531,6 +279,14 @@ Future<void> sendMessage() async {
           break;
         }
       }
+    }
+    if (_currentPhase == ChatPhase.protocoloIntervencao) {
+        final subEtapa = analise['sub_etapa_atual'] ?? 'validacao';
+        instrucaoDinamica = "Instrução: Foque na sub-etapa '$subEtapa' do protocolo.";
+        // Se a recomendação precisar de dados do JSON, você pode injetá-los aqui
+        if (subEtapa == 'recomendacao') {
+            // Exemplo: injetar as preferências do usuário no prompt
+        }
     }
 
     // PASSO 3: MONTAR O PROMPT FINAL

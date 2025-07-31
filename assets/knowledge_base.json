@@ -1,0 +1,38 @@
+{
+  "questionarios": {
+    "gad7_medo": {
+      "nome": "Questionário de Ansiedade (GAD-7)",
+      "perguntas": [
+        { "id": 1, "texto": "Sentir-se nervoso(a), ansioso(a) ou muito tenso(a)?" },
+        { "id": 2, "texto": "Não ser capaz de impedir ou controlar as preocupações?" },
+        { "id": 3, "texto": "Preocupar-se demais com coisas diferentes?" },
+        { "id": 4, "texto": "Ter dificuldade para relaxar?" },
+        { "id": 5, "texto": "Ficar tão inquieto(a) que é difícil ficar parado(a)?" },
+        { "id": 6, "texto": "Ficar facilmente irritado(a) ou aborrecido(a)?" },
+        { "id": 7, "texto": "Sentir medo, como se algo horrível pudesse acontecer?" }
+      ]
+    },
+    "phq9_tristeza": {
+      "nome": "Questionário de Depressão (PHQ-9)",
+      "perguntas": [
+        { "id": 1, "texto": "Pouco interesse ou prazer em fazer as coisas?" },
+        { "id": 2, "texto": "Sentir-se para baixo, deprimido(a) ou sem esperança?" },
+        { "id": 3, "texto": "Dificuldade para adormecer ou permanecer dormindo, ou dormir demais?" },
+        { "id": 4, "texto": "Sentir-se cansado(a) ou com pouca energia?" },
+        { "id": 5, "texto": "Falta de apetite ou comer demais?" },
+        { "id": 6, "texto": "Sentir-se mal consigo mesmo(a), que você é um fracasso ou que decepcionou a si mesmo(a) ou sua família?" },
+        { "id": 7, "texto": "Dificuldade para se concentrar nas coisas, como ler o jornal ou assistir à televisão?" },
+        { "id": 8, "texto": "Mover-se ou falar tão devagar que outras pessoas poderiam ter notado? Ou o oposto - estar tão agitado(a) ou inquieto(a) que você tem se movido muito mais do que o habitual?" },
+        { "id": 9, "texto": "Pensamentos de que seria melhor estar morto(a) ou de se ferir de alguma forma?" }
+      ]
+    },
+    "opcoes_resposta": [
+        { "texto": "De forma alguma", "pontos": 0 },
+        { "texto": "Vários dias", "pontos": 1 },
+        { "texto": "Mais da metade dos dias", "pontos": 2 },
+        { "texto": "Quase todos os dias", "pontos": 3 }
+    ]
+  },
+  "intervencoes": [
+  ]
+}

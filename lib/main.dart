@@ -39,8 +39,6 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-enum TipoQuestionario { gad7_medo, phq9_tristeza, nenhum }
-
 class _ChatScreenState extends State<ChatScreen> {  
   final TextEditingController _userInput = TextEditingController();
 
@@ -57,6 +55,7 @@ class _ChatScreenState extends State<ChatScreen> {
   static const List<String> _emocoesDeValidacao = [
     'medo', 'angústia', 'decepção'
   ];
+
 Future<void> _carregarBaseDeConhecimento() async {
   try {
     print("Iniciando o carregamento do assets/knowledge_base.json...");
@@ -73,6 +72,12 @@ Future<void> _carregarBaseDeConhecimento() async {
       _baseDeConhecimento = data;
       _isLoading = false; // <-- O loading só termina SE tudo der certo
       print("Base de conhecimento carregada e _isLoading definido como false.");
+
+      _messages.add(Message(
+        isUser: false,
+        message: "Olá! Eu sou a Fafa, sua amiga para conversar. 😊 Para começar, qual é o seu nome e quantos anos você tem?",
+        date: DateTime.now(),
+      ));
     });
   } catch (e) {
     // SE OCORRER QUALQUER ERRO, ELE SERÁ IMPRESSO AQUI!
@@ -122,6 +127,9 @@ Future<Map<String, dynamic>> analisarDialogo(String dialogoHistorico, ChatPhase 
         break;
       case ChatPhase.compartilhar:
         promptAnalisador = AppPrompts.analisadorPromptCompartilhar;
+        break;
+      case ChatPhase.compartilharAprimorado:
+        promptAnalisador = AppPrompts.analisadorPromptCompartilharAprimorado;
         break;
     }
 
@@ -204,14 +212,28 @@ void _gerenciarTransicaoDeFase(Map<String, dynamic> analise, String respostaChat
   }
   break;
   
-  case ChatPhase.protocoloIntervencao:
-        if (analise['sub_etapa_atual'] == 'concluido') {
-          proximaFase = ChatPhase.compartilhar;
-          setState(() {
-            _pontuacaoQuestionario = analise['dados_coletados']?['pontuacao_total'] ?? 0;
-          });
-        }
-        break;
+    case ChatPhase.protocoloIntervencao:
+  // Se o analisador indicar que o protocolo foi concluído...
+  if (analise['sub_etapa_atual'] == 'concluido') {
+    // Guarda a pontuação final que o analisador extraiu
+    final int pontuacaoFinal = analise['dados_coletados']?['pontuacao_total'] ?? 0;
+    
+    setState(() {
+      _pontuacaoQuestionario = pontuacaoFinal;
+    });
+
+    // LÓGICA DE DECISÃO PRINCIPAL!
+    // Se a pontuação for maior que 9, vai para a fase aprimorada.
+    if (pontuacaoFinal > 9) {
+      proximaFase = ChatPhase.compartilharAprimorado;
+      print("PONTUAÇÃO ALTA ($pontuacaoFinal > 9). Indo para -> compartilharAprimorado");
+    } else {
+      // Caso contrário, vai para a fase padrão.
+      proximaFase = ChatPhase.compartilhar;
+      print("PONTUAÇÃO BAIXA ($pontuacaoFinal <= 9). Indo para -> compartilhar");
+    }
+  }
+  break;
 
     case ChatPhase.busca:
       // Se o analisador indicar que uma solução foi encontrada.
@@ -231,9 +253,20 @@ void _gerenciarTransicaoDeFase(Map<String, dynamic> analise, String respostaChat
 
     case ChatPhase.compartilhar:
       // Se o analisador indicar que o usuário não quer uma nova conversa.
-      if (analise['usuario_deseja_nova_conversa'] == 'NÃO') {
+      if (analise['usuario_deseja_nova_conversa'] == 'NÃO' && analise['discutido_compartilhar_com_pais'] == 'SIM') {
         // Fim da conversa, não muda de fase, pode até mostrar uma mensagem de "tchau".
-      } else if (analise['usuario_deseja_nova_conversa'] == 'SIM') {
+      } else if (analise['usuario_deseja_nova_conversa'] == 'SIM' && analise['discutido_compartilhar_com_pais'] == 'SIM') {
+        // Volta para o início para discutir um novo evento.
+        proximaFase = ChatPhase.explorar;
+        print("REINICIANDO FLUXO: compartilhar -> explorar");
+      }
+      break;
+
+    case ChatPhase.compartilharAprimorado:
+      
+      if (analise['usuario_deseja_nova_conversa'] == 'NÃO' && analise['discutido_compartilhar_com_pais'] == 'SIM' && analise['discutido_compartilhar_com_profissional'] == 'SIM') {
+        // Fim da conversa, não muda de fase, pode até mostrar uma mensagem de "tchau".
+      } else if (analise['usuario_deseja_nova_conversa'] == 'SIM' && analise['discutido_compartilhar_com_pais'] == 'SIM' && analise['discutido_compartilhar_com_profissional'] == 'SIM') {
         // Volta para o início para discutir um novo evento.
         proximaFase = ChatPhase.explorar;
         print("REINICIANDO FLUXO: compartilhar -> explorar");
@@ -245,9 +278,8 @@ void _gerenciarTransicaoDeFase(Map<String, dynamic> analise, String respostaChat
   setState(() {
     _currentPhase = proximaFase;
   });
-}
-}
-// Dentro de _ChatScreenState
+ }
+ }
 
 Future<void> sendMessage() async {
   final message = _userInput.text;
@@ -281,18 +313,77 @@ Future<void> sendMessage() async {
       }
     }
     if (_currentPhase == ChatPhase.protocoloIntervencao) {
-        final subEtapa = analise['sub_etapa_atual'] ?? 'validacao';
-        instrucaoDinamica = "Instrução: Foque na sub-etapa '$subEtapa' do protocolo.";
-        // Se a recomendação precisar de dados do JSON, você pode injetá-los aqui
-        if (subEtapa == 'recomendacao') {
-            // Exemplo: injetar as preferências do usuário no prompt
-        }
+  final subEtapa = analise['sub_etapa_atual'] ?? 'validacao';
+  final dadosColetados = analise['dados_coletados'];
+  
+  instrucaoDinamica = "Instrução: Foque na sub-etapa '$subEtapa' do protocolo.";
+
+  // LÓGICA PRINCIPAL PARA O QUESTIONÁRIO
+  if (subEtapa == 'questionario' && dadosColetados != null) {
+    // 1. Identifica qual questionário está sendo aplicado
+    final String? questionarioAplicado = dadosColetados['questionario_aplicado'];
+    if (questionarioAplicado != null) {
+      
+      // 2. Conta quantas respostas já foram dadas para saber qual é a próxima pergunta
+      final List<dynamic> respostasDadas = dadosColetados['respostas_questionario'] ?? [];
+      final int proximoIndice = respostasDadas.length;
+
+      // 3. Carrega a lista de todas as perguntas do JSON
+      final List<dynamic>? todasAsPerguntas = _baseDeConhecimento['questionarios']?[questionarioAplicado]?['perguntas'];
+
+      if (todasAsPerguntas != null && proximoIndice < todasAsPerguntas.length) {
+        // 4. Pega o texto da pergunta correta
+        final String proximaPerguntaTexto = todasAsPerguntas[proximoIndice]['texto'];
+
+        // 5. Cria a instrução dinâmica e injeta a pergunta
+        instrucaoDinamica = "Instrução Urgente: A sub-etapa é 'questionario'. "
+                            "Sua única tarefa é fazer a seguinte pergunta ao usuário de forma amigável: "
+                            "'$proximaPerguntaTexto'";
+      }
     }
+  }
+
+  // Lógica para a recomendação continua a mesma
+  if (subEtapa == 'recomendacao' && dadosColetados != null) {
+    final tipo = dadosColetados['preferencia_tipo'];
+    final tempo = dadosColetados['preferencia_tempo'];
+    final teste = dadosColetados['questionario_aplicado'];
+    instrucaoDinamica = "Instrução Urgente: A sub-etapa é 'recomendacao'. "
+                        "O usuário sentiu uma emoção de '$teste'. "
+                        "Ele(a) prefere '$tipo' e tem '$tempo' minutos. "
+                        "Use a BASE DE CONHECIMENTO para escolher e apresentar a melhor atividade.";
+  }
+}
 
     // PASSO 3: MONTAR O PROMPT FINAL
+    String promptFinal; // Declare a variável aqui
+
+    final subEtapa = analise['sub_etapa_atual'] ?? '';
+
+
+  if (_currentPhase == ChatPhase.protocoloIntervencao && subEtapa == 'questionario' && instrucaoDinamica.isNotEmpty) {
+    
+    print("Montando prompt SIMPLIFICADO para a sub-etapa do questionário.");
+    promptFinal = """
+      Seu papel: Você é a Fafa, uma amiga que está aplicando um questionário.
+      Sua tarefa é apenas fazer a pergunta que está na instrução urgente, de forma natural e amigável, e apresentar as opções de resposta.
+      Lembre-se de sempre informar que as opções de resposta são: "De forma alguma", "Vários dias", "Mais da metade dos dias", "Quase todos os dias".
+      
+      ${AppPrompts.regrasGerais}
+
+      $instrucaoDinamica 
+      
+      Histórico da Conversa:
+      $dialogoHistorico
+      Chatbot:
+    """;
+
+  } else {
+    // Para todas as outras fases e sub-etapas, usamos o prompt padrão completo
+    print("Montando prompt PADRÃO para a fase $_currentPhase e sub-etapa '$subEtapa'.");
     String promptBase = AppPrompts.phasePrompts[_currentPhase]!;
     String regras = AppPrompts.regrasGerais;
-    String promptFinal = """
+    promptFinal = """
       $promptBase
       $regras
       $instrucaoDinamica
@@ -300,6 +391,7 @@ Future<void> sendMessage() async {
       $dialogoHistorico
       Chatbot:
     """;
+  }
 
     // PASSO 4: CHAMAR O CHATBOT PRINCIPAL
     final response = await modeloPrincipal.generateContent([Content.text(promptFinal)]);
@@ -335,7 +427,7 @@ Widget build(BuildContext context) {
             decoration: BoxDecoration(
               image: DecorationImage(
                 colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.8), BlendMode.dstATop),
-                image: const NetworkImage('https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEigDbiBM6I5Fx1Jbz-hj_mqL_KtAPlv9UsQwpthZIfFLjL-hvCmst09I-RbQsbVt5Z0QzYI_Xj1l8vkS8JrP6eUlgK89GJzbb_P-BwLhVP13PalBm8ga1hbW5pVx8bswNWCjqZj2XxTFvwQ__u4ytDKvfFi5I2W9MDtH3wFXxww19EVYkN8IzIDJLh_aw/s1920/space-soldier-ai-wallpaper-4k.webp'),
+                image: const NetworkImage('https://i.pinimg.com/736x/f5/5e/be/f55ebeb39d8ac0bc43467e6ec983a1bf.jpg'),
                 fit: BoxFit.cover,
               ),
             ),

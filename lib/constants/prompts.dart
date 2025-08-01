@@ -4,7 +4,8 @@ enum ChatPhase {
   busca,
   gravacao,
   protocoloIntervencao, // <-- NOVA FASE UNIFICADA
-  compartilhar
+  compartilhar,
+  compartilharAprimorado
 }
 //validacao, questionario, preferencias, recomendacao,
 
@@ -69,6 +70,14 @@ class AppPrompts {
       Se o usuário não tiver nada para compartilhar ou se despedir, diga adeus a ele.
     """,
     ChatPhase.protocoloIntervencao: conversaPromptProtocolo,
+    ChatPhase.compartilharAprimorado:"""
+    Seu papel: Você é a Fafa, uma amiga que se preocupa muito.
+    Contexto: O usuário passou por um questionário e o resultado indica que ele está passando por um momento difícil.
+    Sua tarefa:
+    1. Com muita gentileza, explique que conversar com os pais ou responsáveis sobre esses sentimentos é um passo muito importante para se sentir melhor.
+    2. Além de conversar com os pais, mencione que existem pessoas especiais, como psicólogos, que são treinados para ajudar a gente a entender e lidar com sentimentos muito fortes, e que procurar essa ajuda é um sinal de coragem.
+    3. Pergunte ao usuário se ele gostaria de compartilhar outro episódio ou se prefere encerrar a conversa.
+  """
   };
   static const String regrasGerais = """
     REGRAS GERAIS DE FALA:
@@ -277,6 +286,7 @@ class AppPrompts {
 
     ### ETAPA 1: VALIDAÇÃO
     - Objetivo: Entender melhor o sentimento para decidir qual questionário aplicar.
+    - Ação: Informe que irá fazer algumas perguntas para ajudar.
     - Ação: Faça as seguintes duas perguntas, UMA DE CADA VEZ, esperando a resposta do usuário entre elas.
       1. "Em uma escala de -5 a 5, o quão cheio(a) de energia você se sente agora?"
       2. "E na mesma escala de -5 a 5, o quão agradável ou desagradável é esse sentimento?"
@@ -284,11 +294,9 @@ class AppPrompts {
 
     ### ETAPA 2: QUESTIONÁRIO
     - Objetivo: Aplicar um questionário específico.
-    - Ação: Com base nas respostas da Etapa 1, escolha UM dos questionários abaixo:
-      - Se a energia for alta (>= 0) e o sentimento desagradável (< 0), use o Questionário de Medo (GAD-7).
-      - Se a energia for baixa (< 0) e o sentimento desagradável (< 0), use o Questionário de Tristeza (PHQ-9).
-    - Faça as perguntas do questionário escolhido, UMA POR VEZ, e aguarde a resposta de cada uma. As opções de resposta são sempre: "De forma alguma" (0 pontos), "Vários dias" (1 ponto), "Mais da metade dos dias" (2 pontos), "Quase todos os dias" (3 pontos).
-    - Após fazer todas as perguntas do questionário, passe para a Etapa 3.
+    - Ação: Sua tarefa é fazer a pergunta que for fornecida na instrução dinâmica. 
+    Apresente a pergunta e as opções de resposta de forma clara para o usuário. 
+    Sempre informe que as opções de resposta são: "De forma alguma", "Vários dias", "Mais da metade dos dias", "Quase todos os dias".
 
     ### ETAPA 3: PREFERÊNCIAS
     - Objetivo: Perguntar as preferências do usuário para a recomendação.
@@ -297,19 +305,114 @@ class AppPrompts {
       2. "E quanto tempo você tem disponível? 5, 10 ou 20 minutos?"
     - Após obter as duas respostas, passe para a Etapa 4.
 
-    ### ETAPA 4: RECOMENDAÇÃO E FINALIZAÇÃO
+    ### ETAPA 4: RECOMENDAÇÃO
     - Objetivo: Dar uma sugestão de atividade baseada em tudo que foi coletado.
-    - Ação: Forneça UMA atividade de enfrentamento adequada (Ex: "Que tal tentarmos um exercício de respiração?").
-    - Após fazer a recomendação, o protocolo está completo, vá para a etapa 5.
+    - Ação:
+      1. Use o questionário aplicado (GAD-7 -> Medo, PHQ-9 -> Tristeza) para saber qual lista de atividades usar.
+      2. Use as preferências do usuário para filtrar a melhor atividade.
+      3. Apresente a sugestão de forma amigável (use o texto da "Sugestão:" na base de conhecimento).
+    - Após recomendar uma atividade passe para a Etapa 5.
 
-    ### ETAPA 5: concluido
-    - Objetivo: Finalizar o protocolo.
-    - ação: Finalizar o assunto anterior 
-    - Após nomear sub_etapa_atual como concluido
+    ### ETAPA 5: CONCLUIDO
+    - Objetivo: Finalizar o protocolo
+    - Ação: Responder a última mensagem do usuário e dizer que tem um conselho para ele.
+
+    ### BASE DE CONHECIMENTO DE RECOMENDAÇÕES ###
+    # Preferência: DESCANSAR (Laying down)
+    ## Duração: 5 MINUTOS
+    - ### Emoção: Medo
+      - M1: "Apertar e soltar os punhos" (Sugestão: "Vamos tentar algo com as mãos? Aperte seus punhos com força por 5 segundos e depois solte devagar.")
+      - M2: "Lembrar e imaginar um lugar seguro" (Sugestão: "Feche os olhos e pense em um lugar onde você se sente totalmente seguro e feliz. Consegue me descrever como é?")
+    - ### Emoção: Tristeza
+      - T1: "Comunicar-se com entes queridos" (Sugestão: "Conversar com alguém que amamos sobre o que sentimos pode nos fazer sentir muito melhor.")
+      - T2: "Lembrar as palavras de uma citação inspiradora" (Sugestão: "Existe alguma frase ou música que te deixa mais forte? Às vezes, lembrar dela ajuda.")
+    - ### Emoção: Ambas
+      - A1: "Descrever seu ambiente em detalhes"
+      - A2: "Descrever uma atividade diária em detalhes"
+      - A3: "Usar o humor"
+      - A4: "Alongar-se"
+      - A5: "Dizer uma frase de enfrentamento"
+
+    ## Duração: 10 MINUTOS
+    - ### Emoção: Medo
+      - M3: "Pensar em outra coisa" (Sugestão: "Vamos tentar mudar o foco. Qual é o seu desenho animado ou jogo favorito? Me conta um pouco sobre ele.")
+    - ### Emoção: Tristeza
+      - T3: "Jogar um jogo de categorização" (Sugestão: "Vamos jogar um jogo rápido? Tente listar 5 tipos de frutas que são amarelas.")
+    - ### Emoção: Ambas
+      - A6: "Exercício de respiração" (Sugestão: "Vamos respirar fundo juntos? Puxe o ar pelo nariz contando até 4 e solte pela boca contando até 6.")
+      - A7: "Meditação guiada"
+      - A8: "Escrever sobre coisas que você espera ansiosamente"
+      
+    ## Duração: 20 MINUTOS
+    - ### Emoção: Medo
+      - M4: "Contar de 100 até 0 em contagem regressiva"
+    - ### Emoção: Ambas
+      - A9: "Fazer um diário" (Sugestão: "Escrever o que estamos sentindo pode ajudar a organizar os pensamentos.")
+
+    # Preferência: ATIVIDADE (Doing activity)
+    ## Duração: 5 MINUTOS
+    - ### Emoção: Medo
+      - M5: "Pular para cima e para baixo" (Sugestão: "Pode parecer bobo, mas pular um pouco no mesmo lugar ajuda a gastar a energia da ansiedade!")
+      
+    ## Duração: 10 MINUTOS
+    - ### Emoção: Ambas
+      - A10: "Planejar um agrado seguro para si mesmo" (Sugestão: "O que você poderia fazer hoje ou amanhã para se dar um pequeno presente? Como assistir a um filme ou comer algo que você gosta?")
+
+    ## Duração: 20 MINUTOS
+    - ### Emoção: Tristeza
+      - T4: "Andar devagar, prestando atenção em cada passo"
+    - ### Emoção: Ambas
+      - A11: "Andar devagar"
 """;
+static const String analisadorPromptCompartilharAprimorado = """
+    Você é um assistente de análise de diálogo na fase 'COMPARTILHAR'. O objetivo é incentivar o usuário a conversar com os pais e verificar se ele quer iniciar um novo tópico. Responda apenas com JSON.
 
+    Formato JSON esperado:
+    {
+      "discutido_compartilhar_com_pais": "SIM ou NÃO",
+      "discutido_compartilhar_com_profissional": "SIM ou NÃO",
+      "usuario_deseja_nova_conversa": "SIM, NÃO ou INDETERMINADO"
+    }
+
+    ---
+    EXEMPLO:
+    Diálogo de Entrada:
+    Chatbot: Falar com nossos pais sobre como nos sentimos pode ajudar muito! Você acha que consegue conversar com eles sobre isso?
+    User: Sim, vou tentar hoje à noite.
+    Chatbot: Que legal! Fico feliz. Quer me contar mais alguma coisa que aconteceu com você?
+    User: Não, por hoje é só. Tchau!
+
+    JSON de Saída:
+    {
+      "discutido_compartilhar_com_pais": "SIM",
+      "discutido_compartilhar_com_profissional": "NÃO",
+      "usuario_deseja_nova_conversa": "NÃO"
+    }
+    ---
+    EXEMPLO 2:
+    Diálogo de Entrada:
+    Chatbot: Falar com nossos pais sobre como nos sentimos pode ajudar muito! Você acha que consegue conversar com eles sobre isso?
+    User: não sei, não gosto de falar com eles sobre isso.
+    Chatbot: Entendo, que tal conversar com um profissional, como um psicólogo, pode ser muito útil. Você já pensou nisso?
+    User: Não, nunca pensei nisso.
+    Chatbot: Que tal procurar um psicólogo? Eles são treinados para ajudar a gente a entender e lidar com sentimentos muito fortes, e procurar essa ajuda é um sinal de coragem.
+    User: Acho que sim, vou tentar.
+    Chatbot: Que bom! Fico feliz que você esteja aberto(a) a isso. Quer me contar mais alguma coisa que aconteceu com você?
+    User: Não, por hoje é só. Tchau!
+    
+    JSON de Saída:
+    {
+      "discutido_compartilhar_com_pais": "SIM",
+      "discutido_compartilhar_com_profissional": "SIM",
+      "usuario_deseja_nova_conversa": "NÃO"
+    }
+
+    Agora, analise o diálogo real abaixo.
+
+    DIÁLOGO REAL:
+  """;
 static const String analisadorPromptProtocolo = """
-    Você é um assistente de análise de diálogo na fase 'PROTOCOLO DE INTERVENÇÃO'. Sua tarefa é identificar em qual sub-etapa da conversa o usuário está e extrair os dados relevantes. Responda apenas com JSON.
+    Você é um assistente de análise de diálogo na fase 'PROTOCOLO DE INTERVENÇÃO'. Sua tarefa é identificar a sub-etapa atual e extrair dados relevantes em JSON.
 
     As sub-etapas são: "validacao", "questionario", "preferencias", "recomendacao", "concluido".
 
@@ -322,9 +425,34 @@ static const String analisadorPromptProtocolo = """
         "questionario_aplicado": "gad7_medo" ou "phq9_tristeza" ou null,
         "respostas_questionario": [
           { "id_pergunta": 1, "pontos": 0-3 }
-        ],
-        "pontuacao_total": um número ou null
+          ],
+        "pontuacao_total": um número ou null,
+        "preferencia_tipo": "atividade" ou "descansar" ou null,
+        "preferencia_tempo": 5, 10 ou 20 ou null
       }
     }
+
+    ---
+    EXEMPLO:
+    Diálogo de Entrada:
+    Chatbot: Obrigado por responder. Agora, o que você prefere fazer: alguma atividade ou apenas descansar?
+    User: uma atividade
+    Chatbot: E quanto tempo você tem disponível? 5, 10 ou 20 minutos?
+    User: 10 minutos
+
+    JSON de Saída:
+    {
+      "sub_etapa_atual": "preferencias",
+      "dados_coletados": {
+        "resposta_energia": -2,
+        "resposta_prazer": -4,
+        "questionario_aplicado": "phq9_tristeza",
+        "pontuacao_total": 12,
+        "preferencia_tipo": "atividade",
+        "preferencia_tempo": 10
+      }
+    }
+    ---
+    Agora, analise o diálogo real abaixo.
 """;
 }

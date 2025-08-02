@@ -6,10 +6,16 @@ import 'package:intl/intl.dart';
 import '/constants/prompts.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart'; 
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: ".env");
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const MyApp());
 }
 
@@ -56,6 +62,8 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isLoading = true;
   Map<String, dynamic> _baseDeConhecimento = {};
   static const List<String> _emocoesDeValidacao = ['medo', 'angústia'];
+
+  final List<Map<String, dynamic>> _logDeFases = [];
 
   @override
   void initState() {
@@ -224,27 +232,41 @@ class _ChatScreenState extends State<ChatScreen> {
         break;
 
       case ChatPhase.compartilhar:
-      if (analise['usuario_deseja_nova_conversa'] == 'SIM') {
-          // Em vez de apenas mudar a fase, chamamos a função que reinicia TUDO.
-          _reiniciarConversa();
-          // Como a função de reinício já atualiza o estado e limpa a tela,
-          // não precisamos definir uma `proximaFase`. A função já fez o trabalho.
-          return; // Retorna para evitar a lógica de setState no final da função.
+            if (analise['usuario_deseja_nova_conversa'] == 'SIM') {
+          // Salva a conversa atual ANTES de reiniciar para uma nova.
+          _salvarConversaNoFirestore().then((_) {
+            _reiniciarConversa();
+          });
+          return; // Sai da função para evitar outras lógicas de transição
+        } else if (analise['usuario_deseja_nova_conversa'] == 'NÃO') {
+          // A conversa terminou e o usuário não quer outra. Salva os dados.
+          _salvarConversaNoFirestore();
+          // Você pode adicionar uma mensagem final de "Tchau!" aqui se quiser
         }
         break;
       case ChatPhase.compartilharAprimorado:
-        if (analise['usuario_deseja_nova_conversa'] == 'SIM') {
-          // Em vez de apenas mudar a fase, chamamos a função que reinicia TUDO.
-          _reiniciarConversa();
-          // Como a função de reinício já atualiza o estado e limpa a tela,
-          // não precisamos definir uma `proximaFase`. A função já fez o trabalho.
-          return; // Retorna para evitar a lógica de setState no final da função.
+              if (analise['usuario_deseja_nova_conversa'] == 'SIM') {
+          // Salva a conversa atual ANTES de reiniciar para uma nova.
+          _salvarConversaNoFirestore().then((_) {
+            _reiniciarConversa();
+          });
+          return; // Sai da função para evitar outras lógicas de transição
+        } else if (analise['usuario_deseja_nova_conversa'] == 'NÃO') {
+          // A conversa terminou e o usuário não quer outra. Salva os dados.
+          _salvarConversaNoFirestore();
+          // Você pode adicionar uma mensagem final de "Tchau!" aqui se quiser
         }
         break;
     }
 
     if (proximaFase != _currentPhase) {
       print("MUDANÇA DE FASE: $_currentPhase -> $proximaFase");
+      _logDeFases.add({
+      'timestamp': DateTime.now().toIso8601String(),
+      'fase_anterior': _currentPhase.toString(),
+      'fase_nova': proximaFase.toString(),
+      'resultado_analise_trigger': analise, // O JSON que causou a transição
+    });
       setState(() {
         _currentPhase = proximaFase;
       });
@@ -386,6 +408,56 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     print("CONVERSA REINICIADA. Estado zerado.");
   }
+
+  Future<void> _salvarConversaNoFirestore() async {
+  // Não salva conversas muito curtas (ex: apenas a mensagem inicial)
+  if (_messages.length <= 1) {
+    print("Conversa muito curta, não será salva.");
+    return;
+  }
+
+  print("Iniciando o salvamento da sessão no Firestore...");
+  // Opcional: Você pode ativar um indicador de loading aqui se desejar
+  // setState(() => _isSaving = true);
+
+  try {
+    // 1. Cria uma referência para a coleção no Firestore.
+    //    Se a coleção não existir, o Firebase a criará automaticamente.
+    final collection = FirebaseFirestore.instance.collection('sessoes_de_conversa');
+
+    // 2. Mapeia a lista de mensagens para um formato JSON (List<Map<String, dynamic>>)
+    final List<Map<String, dynamic>> historicoFormatado = _messages.map((msg) {
+      return {
+        'isUser': msg.isUser,
+        'message': msg.message,
+        'timestamp': msg.date, // Firestore lida bem com o tipo DateTime do Dart
+      };
+    }).toList();
+
+    // 3. Cria o documento a ser salvo, com todos os dados da sessão
+    await collection.add({
+      // IMPORTANTE: Use um ID anônimo para o participante!
+      // Usar o timestamp garante um ID único para cada sessão.
+      'id_participante': 'Participante_${DateTime.now().millisecondsSinceEpoch}',
+      'data_inicio': _messages.first.date,
+      'data_fim': DateTime.now(),
+      'historico_mensagens': historicoFormatado,
+      'log_fases': _logDeFases, // Salva o log de fases que coletamos
+      'pontuacao_final_questionario': _pontuacaoQuestionario, // Salva a pontuação final
+      'dados_finais_protocolo': _dadosColetadosProtocolo, // Salva as preferências
+    });
+
+    print("Sessão salva no Firestore com sucesso!");
+
+  } catch (e) {
+    print("!!!!!!!!!! ERRO AO SALVAR NO FIRESTORE !!!!!!!!!!");
+    print("Erro: $e");
+    // Opcional: mostrar uma mensagem de erro na tela para o pesquisador
+  } finally {
+    // Opcional: Esconder o indicador de loading
+    // setState(() => _isSaving = false);
+  }
+}
 
 @override
 Widget build(BuildContext context) {

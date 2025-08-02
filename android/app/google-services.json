@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "21684444537",
+    "project_id": "dsi-2020-2",
+    "storage_bucket": "dsi-2020-2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:21684444537:android:c26cca172c0fe7276d23a8",
+        "android_client_info": {
+          "package_name": "com.example.tcc_01"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "21684444537-lrc8v5abthteb5im8gndvpmki6knc8ln.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAfl4MJQTNY1hL27Z_aEhKROdOzM8NZQqw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "21684444537-5ju0mvs513p7erbpen3vi0cbne3tov43.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "21684444537-tar99dh6drva2kg81mvbig551tigprc1.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.calendarApp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

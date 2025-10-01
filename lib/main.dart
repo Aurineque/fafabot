@@ -65,6 +65,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   final List<Map<String, dynamic>> _logDeFases = [];
 
+  String? _sessionId;
+
   @override
   void initState() {
     super.initState();
@@ -78,6 +80,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     print("initState: Chamando _carregarBaseDeConhecimento...");
     _carregarBaseDeConhecimento();
+    _sessionId = FirebaseFirestore.instance.collection('sessoes_de_conversa').doc().id;
   }
 
   Future<void> _carregarBaseDeConhecimento() async {
@@ -146,6 +149,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _gerenciarTransicaoDeFase(Map<String, dynamic> analise) {
     ChatPhase proximaFase = _currentPhase;
+    _logDeFases.add({
+      'timestamp': DateTime.now().toIso8601String(),
+      'fase_previa': proximaFase.toString(),
+    });
 
     switch (_currentPhase) {
       case ChatPhase.explorar:
@@ -264,7 +271,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _logDeFases.add({
       'timestamp': DateTime.now().toIso8601String(),
       'fase_anterior': _currentPhase.toString(),
-      'fase_nova': proximaFase.toString(),
+      'fase_atual': proximaFase.toString(),
       'resultado_analise_trigger': analise, // O JSON que causou a transição
     });
       setState(() {
@@ -332,7 +339,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (_currentPhase == ChatPhase.questionario) {
         _iniciarQuestionario();
       }
-
+      await _salvarConversaNoFirestore();
     } catch (e) {
       setState(() {
         _messages.add(Message(isUser: false, message: "Desculpe, ocorreu um erro. código: $e", date: DateTime.now()));
@@ -410,52 +417,43 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _salvarConversaNoFirestore() async {
-  // Não salva conversas muito curtas (ex: apenas a mensagem inicial)
-  if (_messages.length <= 1) {
-    print("Conversa muito curta, não será salva.");
+  // Se não houver um ID de sessão ou a conversa for muito curta, não faz nada.
+  if (_sessionId == null || _messages.length <= 1) {
+    print("ID da sessão não definido ou conversa muito curta. O salvamento foi ignorado.");
     return;
   }
 
-  print("Iniciando o salvamento da sessão no Firestore...");
-  // Opcional: Você pode ativar um indicador de loading aqui se desejar
-  // setState(() => _isSaving = true);
+  print("Salvando/Atualizando a sessão $_sessionId no Firestore...");
 
   try {
-    // 1. Cria uma referência para a coleção no Firestore.
-    //    Se a coleção não existir, o Firebase a criará automaticamente.
-    final collection = FirebaseFirestore.instance.collection('sessoes_de_conversa');
+    // 1. Cria uma referência para o DOCUMENTO específico desta sessão.
+    final docRef = FirebaseFirestore.instance.collection('sessoes_de_conversa').doc(_sessionId);
 
-    // 2. Mapeia a lista de mensagens para um formato JSON (List<Map<String, dynamic>>)
+    // 2. Mapeia a lista de mensagens (igual a antes)
     final List<Map<String, dynamic>> historicoFormatado = _messages.map((msg) {
       return {
         'isUser': msg.isUser,
         'message': msg.message,
-        'timestamp': msg.date, // Firestore lida bem com o tipo DateTime do Dart
+        'timestamp': msg.date,
       };
     }).toList();
 
-    // 3. Cria o documento a ser salvo, com todos os dados da sessão
-    await collection.add({
-      // IMPORTANTE: Use um ID anônimo para o participante!
-      // Usar o timestamp garante um ID único para cada sessão.
-      'id_participante': 'Participante_${DateTime.now().millisecondsSinceEpoch}',
+    // 3. Usa .set() para criar o documento na primeira vez e atualizá-lo nas vezes seguintes.
+    await docRef.set({
+      'id_participante': 'Participante_${DateTime.now().millisecondsSinceEpoch}', // Pode ser melhorado
+      'id_sessao': _sessionId,
       'data_inicio': _messages.first.date,
-      'data_fim': DateTime.now(),
+      'data_ultima_atualizacao': DateTime.now(),
       'historico_mensagens': historicoFormatado,
-      'log_fases': _logDeFases, // Salva o log de fases que coletamos
-      'pontuacao_final_questionario': _pontuacaoQuestionario, // Salva a pontuação final
-      'dados_finais_protocolo': _dadosColetadosProtocolo, // Salva as preferências
+      'log_fases': _logDeFases,
+      'pontuacao_final_questionario': _pontuacaoQuestionario,
+      'dados_finais_protocolo': _dadosColetadosProtocolo,
     });
 
-    print("Sessão salva no Firestore com sucesso!");
+    print("Sessão $_sessionId atualizada no Firestore com sucesso!");
 
   } catch (e) {
-    print("!!!!!!!!!! ERRO AO SALVAR NO FIRESTORE !!!!!!!!!!");
-    print("Erro: $e");
-    // Opcional: mostrar uma mensagem de erro na tela para o pesquisador
-  } finally {
-    // Opcional: Esconder o indicador de loading
-    // setState(() => _isSaving = false);
+    print("ERRO AO SALVAR NO FIRESTORE: $e");
   }
 }
 
